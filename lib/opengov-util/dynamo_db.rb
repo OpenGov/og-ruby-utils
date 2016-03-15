@@ -109,8 +109,7 @@ class OpenGov::Util::DynamoDb
     connection = new_db_connection
 
     resp = aws_retry_handler do
-      connection.get_item(table, item_key, 'AttributesToGet' => @attribute_types.keys,
-                                           'ReturnConsumedCapacity' => 'TOTAL')
+      connection.get_item(table, item_key, 'ReturnConsumedCapacity' => 'TOTAL') #'AttributesToGet' => @attribute_types.keys,
     end
 
     resp.body
@@ -143,7 +142,7 @@ class OpenGov::Util::DynamoDb
       end
 
       resp = aws_retry_handler do
-        connection.update_item(table, item_key, update_attributes, 'ReturnValues' => 'ALL_NEW',
+        connection.update_item(table, item_key, 'AttributeUpdates' => update_attributes, 'ReturnValues' => 'ALL_NEW',
                                                                    'ReturnConsumedCapacity' => 'TOTAL')
       end
 
@@ -396,6 +395,14 @@ class OpenGov::Util::DynamoDb
     type = val_meta.first.first
     value = val_meta.first.last
     case type
+    when 'S'
+      value
+    when 'N'
+      BigDecimal.new(value)
+    when 'B'
+      StringIO.new(value)
+    when 'BOOL'
+      value
     when 'L'
       value.map(&method(:clean_value))
     when 'M'
