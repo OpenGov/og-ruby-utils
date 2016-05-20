@@ -103,14 +103,17 @@ class OpenGov::Util::DynamoDb
   end
 
   #
-  # Make formatted read for single item
+  # Make formatted read for single item. Optional filter for the keys to return on the optimized read operation
   #
-  def db_read(item_key)
+  def db_read(item_key, filtered_attributes = nil)
     connection = new_db_connection
 
     resp = aws_retry_handler do
-      connection.get_item(table, item_key, 'AttributesToGet' => @attribute_types.keys,
-                                           'ReturnConsumedCapacity' => 'TOTAL')
+      if filtered_attributes.nil?
+        connection.get_item(table, item_key, 'ReturnConsumedCapacity' => 'TOTAL') #'AttributesToGet' => @attribute_types.keys,
+      else
+        connection.get_item(table, item_key, 'ReturnConsumedCapacity' => 'TOTAL', 'AttributesToGet' => filtered_attributes)
+      end
     end
 
     resp.body
@@ -126,10 +129,16 @@ class OpenGov::Util::DynamoDb
     update_data.each do |k, value|
       next unless @attribute_types.key?(k) && !key_attr?(k)
       next if original_item[k] == value # No need to update if it hasn't changed
-      update_attributes[k] = {
-        'Action' => 'PUT',
-        'Value' => construct_update_data(@attribute_types[k], value)
-      }
+      if value.nil?
+        update_attributes[k] = {
+          'Action' => 'DELETE'
+        }
+      else
+        update_attributes[k] = {
+          'Action' => 'PUT',
+          'Value' => construct_update_data(@attribute_types[k], value)
+        }
+      end
     end
 
     if update_attributes.size > 0
@@ -143,11 +152,11 @@ class OpenGov::Util::DynamoDb
       end
 
       resp = aws_retry_handler do
-        connection.update_item(table, item_key, update_attributes, 'ReturnValues' => 'ALL_NEW',
+        connection.update_item(table, item_key, 'AttributeUpdates' => update_attributes, 'ReturnValues' => 'ALL_NEW',
                                                                    'ReturnConsumedCapacity' => 'TOTAL')
       end
 
-      resp.body
+      clean_response_body(resp.body)
     else
       original_item
     end
@@ -350,8 +359,14 @@ class OpenGov::Util::DynamoDb
   #
   def get_type(obj)
     case obj
-    when Hash then 'M'
-    when Array then 'L'
+    when Hash
+    	ret = ['M']
+    	obj.each_pair { |k, v| ret << get_type(v) }
+    	ret.flatten
+    when Array
+    	ret = ['L']
+    	obj.each { |v| ret << get_type(v) }
+    	ret.flatten
     when String then 'S'
     when Symbol then 'S'
     when Numeric then 'N'
@@ -396,6 +411,10 @@ class OpenGov::Util::DynamoDb
     type = val_meta.first.first
     value = val_meta.first.last
     case type
+    when 'N'
+      BigDecimal.new(value).to_f
+    when 'B'
+      StringIO.new(value)
     when 'L'
       value.map(&method(:clean_value))
     when 'M'
