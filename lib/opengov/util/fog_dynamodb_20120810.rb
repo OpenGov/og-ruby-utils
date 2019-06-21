@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 # Need to call .new with valid parameters to trigger the dynamic includes to

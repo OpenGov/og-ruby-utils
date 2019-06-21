@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 RSpec.shared_examples 'collection' do # Assumes "hashes" is defined in a `let` variable
